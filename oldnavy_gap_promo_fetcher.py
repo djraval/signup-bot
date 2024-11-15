@@ -11,20 +11,60 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
+import os
 
 class PromoCodeParser:
-    def __init__(self):
+    def __init__(self, debug_mode=False):
         self.code_pattern = re.compile(r'[A-Z0-9]{10,12}')
         self.validity_pattern = re.compile(r'Valid\s+until\s+(\d{1,2}/\d{1,2})', re.IGNORECASE)
+        self.discount_pattern = re.compile(r'(\d+)\s*%(?:\s+off|\s*\.)?', re.IGNORECASE)
+        self.debug_mode = debug_mode
+        if debug_mode:
+            self.debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'debug_emails')
+            os.makedirs(self.debug_dir, exist_ok=True)
 
-    def extract_codes_from_html(self, html_content):
+    def extract_codes_from_html(self, html_content, email_type=None):
+        if self.debug_mode and email_type:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            debug_file = os.path.join(self.debug_dir, f'{email_type}_{timestamp}.html')
+            with open(debug_file, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+
         soup = BeautifulSoup(html_content, 'html.parser')
         result = {
             'online_code': None,
             'store_code': None,
             'valid_until': None,
-            'all_codes': []
+            'all_codes': [],
+            'discount_percentage': None
         }
+
+        # Check for discount in mobile-hidden elements (works for both GAP and Old Navy)
+        for element in soup.find_all(class_='mobile-hidden'):
+            text = element.get_text().strip()
+            discount_match = self.discount_pattern.search(text)
+            if discount_match:
+                result['discount_percentage'] = discount_match.group(1)
+                break
+
+        # If no discount found, proceed with regular parsing
+        if not result['discount_percentage']:
+            # Check all links
+            for link in soup.find_all('a'):
+                link_text = link.get_text().strip()
+                discount_match = self.discount_pattern.search(link_text)
+                if discount_match:
+                    result['discount_percentage'] = discount_match.group(1)
+                    break
+
+            # If still no discount found, try the body text
+            if not result['discount_percentage']:
+                body = soup.find('body')
+                if body:
+                    body_text = body.get_text()
+                    discount_match = self.discount_pattern.search(body_text)
+                    if discount_match:
+                        result['discount_percentage'] = discount_match.group(1)
 
         # First try to find codes in the coupon class (Gap Canada format)
         coupon_tag = soup.find('p', class_='coupon')
@@ -180,8 +220,8 @@ def subscribe_to_gap(email):
 
 def process_email(html_content, subject):
     # Parse promo codes
-    parser = PromoCodeParser()
-    return parser.extract_codes_from_html(html_content)
+    parser = PromoCodeParser(debug_mode=True)  # Enable debug mode
+    return parser.extract_codes_from_html(html_content, 'gap' if 'gap' in subject.lower() else 'oldnavy')
 
 def wait_for_email(tm, email, timeout_hours=24, refresh_interval=5):
     # Wait for and process the welcome email
@@ -249,6 +289,8 @@ def display_promo_results(console, retailer, promo_results):
             table.add_row("Store Code", promo_results['store_code'])
         if retailer == 'oldnavy' and promo_results['valid_until']:
             table.add_row("Valid Until", promo_results['valid_until'])
+        if promo_results['discount_percentage']:
+            table.add_row("Discount Percentage", f"{promo_results['discount_percentage']}%")
             
         console.print(f"\n[bold]{retailer.upper()} Promo Codes:[/bold]")
         console.print(table)
