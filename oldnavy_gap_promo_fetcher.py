@@ -26,6 +26,18 @@ class PromoCodeParser:
             'all_codes': []
         }
 
+        # First try to find codes in the coupon class (Gap Canada format)
+        coupon_tag = soup.find('p', class_='coupon')
+        if coupon_tag:
+            text = coupon_tag.get_text()
+            codes = self.code_pattern.findall(text)
+            if len(codes) >= 2:
+                result['online_code'] = codes[0]
+                result['store_code'] = codes[1]
+                result['all_codes'] = codes
+                return result
+
+        # Fallback to original parsing logic for other formats
         all_codes = []
         for text in soup.stripped_strings:
             matches = self.code_pattern.findall(text)
@@ -128,11 +140,42 @@ def subscribe_to_oldnavy(email):
     
     try:
         response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()
-        print(f"Successfully subscribed with email: {email}")
-        return True
+        if response.status_code == 201:
+            print(f"Successfully subscribed to Old Navy with email: {email}")
+            return True
+        else:
+            print(f"Failed to subscribe. Status code: {response.status_code}")
+            return False
     except requests.exceptions.RequestException as e:
         print(f"Error subscribing to Old Navy: {e}")
+        return False
+
+def subscribe_to_gap(email):
+    url = 'https://api.gapcanada.ca/commerce/communication-preference/v2/subscriptions/email'
+    headers = {
+        'accept': 'application/json',
+        'content-type': 'application/json',
+        'origin': 'https://www.gapcanada.ca',
+        'referer': 'https://www.gapcanada.ca/'    }
+    data = {
+        "emailAddress": email,
+        "brand": "GP",
+        "market": "CA",
+        "locale": "en_CA",
+        "mainSource": "WEBSITE EMAIL SIGNUP",
+        "subSource": "GP"
+    }
+    
+    try: 
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code == 201:
+            print(f"Successfully subscribed to Gap Canada with email: {email}")
+            return True
+        else:
+            print(f"Failed to subscribe. Status code: {response.status_code}")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"Error subscribing to Gap: {e}")
         return False
 
 def process_email(html_content, subject):
@@ -142,32 +185,39 @@ def process_email(html_content, subject):
 
 def wait_for_email(tm, email, timeout_hours=24, refresh_interval=5):
     # Wait for and process the welcome email
-    print(f"\nWaiting for email... (timeout: {timeout_hours} hours, refreshing every {refresh_interval} seconds)")
+    print(f"\nWaiting for emails... (timeout: {timeout_hours} hours, refreshing every {refresh_interval} seconds)")
     start_time = time.time()
     timeout_seconds = timeout_hours * 3600
+    
+    oldnavy_done = False
+    gap_done = False
 
-    while True:
-        if time.time() - start_time > timeout_seconds:
-            print("Timeout reached. No email received.")
-            return None
+    while time.time() - start_time < timeout_seconds:
+        if oldnavy_done and gap_done:
+            break
 
         messages = tm.get_messages(email)
-        
         if messages:
-            message_id = messages[0]['id']
-            full_message = tm.read_message(email, message_id)
-            
-            if full_message:
-                print("\nEmail received!")
-                sender = full_message.get('from', 'Unknown')
+            for message in messages:
+                message_id = message.get('id')
+                full_message = tm.read_message(email, message_id)
                 
-                # Extract email address from sender field and check if it's from oldnavy.ca
+                if not full_message:
+                    continue
+
+                sender = full_message.get('from', 'Unknown')
                 email_match = re.search(r'<(.+?)>', sender)
                 sender_email = email_match.group(1) if email_match else sender
-                if not sender_email.lower().endswith('oldnavy.ca'):
-                    print(f"Email not from Old Navy ({sender_email}). \nWaiting for the correct email...")
+
+                retailer = None
+                if not oldnavy_done and sender_email.lower().endswith('oldnavy.ca'):
+                    retailer = 'oldnavy'
+                elif not gap_done and sender_email.lower().endswith('gapcanada.ca'):
+                    retailer = 'gap'
+                else:
                     continue
-                
+
+                print(f"\n{retailer.title()} email received!")
                 html_body = full_message.get('htmlBody', '')
                 if html_body:
                     promo_results = process_email(
@@ -175,44 +225,20 @@ def wait_for_email(tm, email, timeout_hours=24, refresh_interval=5):
                         full_message.get('subject', 'No subject')
                     )
                     
-                    if not promo_results:
-                        print(f"No promo codes found in the email with subject: {full_message.get('subject', 'No subject')}. \nWaiting for the correct email...")
-                        continue
-                    return promo_results
-                else:
-                    print("\nNo HTML content found in the email.")
-                    return None
+                    if promo_results:
+                        display_promo_results(Console(), retailer, promo_results)
+                        if retailer == 'oldnavy':
+                            oldnavy_done = True
+                        else:
+                            gap_done = True
+
         time.sleep(refresh_interval)
 
-def main():
-    console = Console()
-    
-    # Create a fancy title
-    console.print(Panel.fit(
-        "[bold yellow]Old Navy Promo Code Fetcher[/bold yellow]",
-        border_style="blue",
-        padding=(1, 2)
-    ))
-    
-    # Get current timestamp
-    timestamp = datetime.now()
-    
-    # Create temporary email
-    tm = TempMail()
-    email = tm.generate_email()
-    console.print(f"\n[cyan]Generated email:[/cyan] [green]{email}[/green]")
-    
-    # Subscribe to Old Navy newsletter
-    if not subscribe_to_oldnavy(email):
-        console.print("[red]Failed to subscribe to Old Navy newsletter. Exiting...[/red]")
-        return
-    
-    # Wait for and process the welcome email
-    with console.status("[bold green]Waiting for welcome email...") as status:
-        promo_results = wait_for_email(tm, email)
-    
+    if not (oldnavy_done or gap_done):
+        print("\nTimeout reached. No emails received.")
+
+def display_promo_results(console, retailer, promo_results):
     if promo_results and (promo_results['online_code'] or promo_results['store_code']):
-        # Create a table for display
         table = Table(box=box.ROUNDED, border_style="blue", header_style="bold magenta")
         table.add_column("Type", style="cyan")
         table.add_column("Code", style="green")
@@ -220,12 +246,38 @@ def main():
         if promo_results['online_code']:
             table.add_row("Online Code", promo_results['online_code'])
         if promo_results['store_code']:
-            table.add_row("In-Store Code", promo_results['store_code'])
-        if promo_results['valid_until']:
+            table.add_row("Store Code", promo_results['store_code'])
+        if retailer == 'oldnavy' and promo_results['valid_until']:
             table.add_row("Valid Until", promo_results['valid_until'])
             
-        console.print("\n[bold]Promo Codes Found:[/bold]")
+        console.print(f"\n[bold]{retailer.upper()} Promo Codes:[/bold]")
         console.print(table)
+
+def main():
+    console = Console()
+    
+    # Create a fancy title
+    console.print(Panel.fit(
+        "[bold yellow]Gap & Old Navy Promo Code Fetcher[/bold yellow]",
+        border_style="blue",
+        padding=(1, 2)
+    ))
+    
+    # Create temporary email
+    tm = TempMail()
+    email = tm.generate_email()
+    console.print(f"\n[cyan]Generated email:[/cyan] [green]{email}[/green]")
+    
+    # Subscribe to both newsletters
+    oldnavy_success = subscribe_to_oldnavy(email)
+    gap_success = subscribe_to_gap(email)
+    
+    if not (oldnavy_success or gap_success):
+        console.print("[red]Failed to subscribe to any newsletters. Exiting...[/red]")
+        return
+    
+    # Wait for and process welcome emails
+    wait_for_email(tm, email)
 
 if __name__ == "__main__":
     main()
