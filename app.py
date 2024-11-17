@@ -13,8 +13,9 @@ from collections import defaultdict
 
 app = Flask(__name__)
 
-# Add these lines after creating the Flask app
-app.config['PREFERRED_URL_SCHEME'] = 'https'
+# Comment out or conditionally set the HTTPS scheme based on environment
+if not app.debug:  # Only use HTTPS in production
+    app.config['PREFERRED_URL_SCHEME'] = 'https'
 
 # Add this new route at the top of your routes
 @app.route('/')
@@ -318,7 +319,12 @@ def create_promo_request():
     thread = threading.Thread(target=process_promo_request, args=(task_id, retailer))
     thread.start()
     
-    status_url = url_for('get_promo_status', task_id=task_id, _external=True, _scheme='https')
+    # Use _scheme parameter conditionally
+    if app.debug:
+        status_url = url_for('get_promo_status', task_id=task_id, _external=True)
+    else:
+        status_url = url_for('get_promo_status', task_id=task_id, _external=True, _scheme='https')
+        
     return jsonify({
         'task_id': task_id,
         'status': 'queued',
