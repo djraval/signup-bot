@@ -1,1 +1,3 @@
 debug_emails
+__pycache__
+.venv

@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Promo Code Fetcher</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 30px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 2.6em;
+            color: #333;
+            margin-bottom: 12px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 1.3em;
+            margin-bottom: 15px;
+        }
+        .coming-soon {
+            display: inline-block;
+            font-size: 1.1em;
+            color: #666;
+            background-color: #f0f0f0;
+            padding: 6px 16px;
+            border-radius: 20px;
+            margin-bottom: 35px;
+        }
+        .retailers-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            max-width: 600px;
+            margin: 0 auto 30px;
+            padding: 0 20px;
+        }
+        .retailer-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 150px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+            cursor: pointer;
+            border: 2px solid transparent;
+        }
+        .retailer-card:hover {
+            transform: translateY(-2px);
+        }
+        .retailer-card img {
+            max-width: 120px;
+            height: auto;
+            margin-bottom: 12px;
+        }
+        .retailer-card .name {
+            color: #333;
+            font-size: 1.3em;
+        }
+        .fetch-button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1.3em;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .fetch-button:hover {
+            background: #45a049;
+        }
+        .fetch-button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 30px;
+        }
+        .status-message {
+            text-align: center;
+            margin-bottom: 15px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            color: #666;
+        }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #4CAF50;
+        }
+        .results h3 {
+            color: #333;
+            margin-top: 0;
+            margin-bottom: 10px;
+            font-size: 1.3em;
+        }
+        .results p {
+            margin: 5px 0;
+            color: #666;
+            font-size: 1.1em;
+        }
+        .code-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background-color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 8px 0;
+        }
+        .code-label {
+            color: #666;
+            font-size: 1.1em;
+            min-width: 85px;
+        }
+        .code-text {
+            flex-grow: 1;
+            font-family: monospace;
+            font-size: 1.3em;
+            color: #333;
+        }
+        .copy-button {
+            background: none;
+            border: none;
+            padding: 4px;
+            cursor: pointer;
+            color: #4CAF50;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .copy-button:hover {
+            color: #45a049;
+        }
+        .copy-button.copied {
+            color: #28a745;
+        }
+        .meta-info {
+            display: flex;
+            gap: 15px;
+            color: #666;
+            font-size: 1.1em;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
+        .meta-info span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            margin-top: 15px;
+        }
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .logo-text {
+            font-size: 24px;
+            font-weight: bold;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            text-align: center;
+            width: 120px;
+        }
+        .logo-text.oldnavy {
+            background-color: #002c74;
+            color: white;
+            font-family: Arial Black, Arial, sans-serif;
+        }
+        .logo-text.gap {
+            background-color: #002c74;
+            color: white;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            letter-spacing: 2px;
+        }
+        .subtitle {
+            color: #666;
+            text-align: center;
+            margin-top: -10px;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        .coming-soon {
+            display: inline-block;
+            font-size: 0.9em;
+            color: #666;
+            background-color: #f0f0f0;
+            padding: 4px 12px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+        }
+        @keyframes sparkle {
+            0% { opacity: 0.7; }
+            50% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+        .coming-soon {
+            animation: sparkle 2s infinite;
+        }
+        .codes-wrapper {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .code-container {
+            flex: 1;
+            min-width: 200px;
+        }
+        .meta-info {
+            display: flex;
+            gap: 15px;
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+            justify-content: center;
+        }
+        .retailer-card.selected {
+            border-color: #4CAF50;
+            background-color: #f8fff8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Instant Discount Hunter</h1>
+        <p class="subtitle">Automatically find the latest Old Navy & Gap promo codes</p>
+        <span class="coming-soon">More retailers coming soon ✨</span>
+        
+        <div class="retailers-grid">
+            <div class="retailer-card" data-retailer="oldnavy" onclick="selectRetailer('oldnavy', this)">
+                <img src="{{ url_for('static', filename='oldnavy-logo.svg') }}" alt="Old Navy">
+                <span class="name">Old Navy</span>
+            </div>
+            <div class="retailer-card" data-retailer="gap" onclick="selectRetailer('gap', this)">
+                <img src="{{ url_for('static', filename='gap-logo.svg') }}" alt="Gap">
+                <span class="name">Gap</span>
+            </div>
+        </div>
+        
+        <button id="fetch-button" class="fetch-button" onclick="fetchPromoCodes()" disabled>
+            Fetch Promo Codes
+        </button>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        let selectedRetailer = null;
+
+        function selectRetailer(retailer, element) {
+            // Remove selected class from all cards
+            document.querySelectorAll('.retailer-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Add selected class to clicked card
+            element.classList.add('selected');
+            selectedRetailer = retailer;
+            
+            // Enable the fetch button
+            document.getElementById('fetch-button').disabled = false;
+        }
+
+        async function fetchPromoCodes() {
+            if (!selectedRetailer) return;
+
+            const button = document.getElementById('fetch-button');
+            const statusDiv = document.getElementById('status');
+            
+            button.disabled = true;
+            statusDiv.innerHTML = `
+                <div class="status-message">
+                    <div class="loading-spinner"></div>
+                    Initiating request...
+                </div>`;
+
+            try {
+                const response = await fetch('/api/promo', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ retailer: selectedRetailer }),
+                });
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to start task');
+                }
+
+                const statusUrl = data.status_url;
+                while (true) {
+                    const statusResponse = await fetch(statusUrl);
+                    const statusData = await statusResponse.json();
+
+                    let statusMessage = '';
+                    switch (statusData.status) {
+                        case 'queued':
+                            statusMessage = 'Waiting in queue...';
+                            break;
+                        case 'subscribing':
+                            statusMessage = `Subscribing with email: ${statusData.email}`;
+                            break;
+                        case 'waiting_for_email':
+                            statusMessage = 'Waiting for promotional email...';
+                            break;
+                        case 'completed':
+                            displayResults(statusData);
+                            button.disabled = false;
+                            return;
+                        case 'failed':
+                            throw new Error(statusData.error || 'Task failed');
+                    }
+                    statusDiv.innerHTML = `
+                        <div class="status-message">
+                            <div class="loading-spinner"></div>
+                            ${statusMessage}
+                        </div>`;
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+                button.disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            const statusDiv = document.getElementById('status');
+            const codes = data.codes;
+            
+            let html = '<div class="results">';
+            html += `<h3>Results for ${data.retailer}</h3>`;
+            html += `<p>Email used: ${data.email}</p>`;
+            
+            html += '<div class="codes-wrapper">';
+            
+            if (codes.online_code) {
+                html += `
+                    <div class="code-container">
+                        <span class="code-label">🌐 Online:</span>
+                        <span class="code-text">${codes.online_code}</span>
+                        <button class="copy-button" onclick="copyToClipboard('${codes.online_code}', this)" title="Copy to clipboard">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                            </svg>
+                        </button>
+                    </div>`;
+            }
+            
+            if (codes.store_code) {
+                html += `
+                    <div class="code-container">
+                        <span class="code-label">🏪 In-Store:</span>
+                        <span class="code-text">${codes.store_code}</span>
+                        <button class="copy-button" onclick="copyToClipboard('${codes.store_code}', this)" title="Copy to clipboard">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                            </svg>
+                        </button>
+                    </div>`;
+            }
+            html += '</div>';
+            
+            if (codes.valid_until || codes.discount_percentage) {
+                html += '<div class="meta-info">';
+                if (codes.discount_percentage) {
+                    html += `<span>💰 ${codes.discount_percentage}% off</span>`;
+                }
+                if (codes.valid_until) {
+                    html += `<span>⏰ Valid until ${codes.valid_until}</span>`;
+                }
+                html += '</div>';
+            }
+            
+            html += '</div>';
+            statusDiv.innerHTML = html;
+        }
+
+        async function copyToClipboard(text, button) {
+            try {
+                await navigator.clipboard.writeText(text);
+                
+                // Visual feedback
+                button.classList.add('copied');
+                button.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
+                    </svg>
+                `;
+                
+                // Reset button after 2 seconds
+                setTimeout(() => {
+                    button.classList.remove('copied');
+                    button.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                        </svg>
+                    `;
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+        }
+    </script>
+</body>
+</html> 
