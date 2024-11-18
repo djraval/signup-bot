@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ retailer }} Promo Email - Instant Discount Hunter</title>
+    <style>
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: white;
+            padding: 10px 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+
+        .back-link {
+            color: #4CAF50;
+            text-decoration: none;
+            margin-right: 20px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .email-subject {
+            display: inline-block;
+            margin: 0;
+            font-size: 1.2em;
+            color: #333;
+        }
+
+        .email-content {
+            margin-top: 60px;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{{ url_for('history_page') }}" class="back-link">← Back to History</a>
+        <h1 class="email-subject">{{ subject }}</h1>
+    </div>
+    <div class="email-content">
+        {{ email_html | safe }}
+    </div>
+</body>
+</html> 

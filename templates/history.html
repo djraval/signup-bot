@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Promo Code History - Instant Discount Hunter</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .back-link {
+            display: inline-block;
+            color: #4CAF50;
+            text-decoration: none;
+            margin-bottom: 20px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .history-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+
+        .retailer {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .codes-wrapper {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+
+        .code-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background-color: #f8f9fa;
+            padding: 12px 15px;
+            border-radius: 8px;
+            flex: 1 1 300px;
+            min-width: 0;
+        }
+
+        .code-label {
+            color: #666;
+            font-size: 1.1em;
+            min-width: 85px;
+        }
+
+        .code-text {
+            flex-grow: 1;
+            font-family: monospace;
+            font-size: 1.3em;
+            color: #333;
+        }
+
+        .copy-button {
+            background: none;
+            border: none;
+            padding: 4px;
+            cursor: pointer;
+            color: #4CAF50;
+        }
+
+        .copy-button:hover {
+            color: #45a049;
+        }
+
+        .meta-info {
+            display: flex;
+            gap: 15px;
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
+
+        .timestamp {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .email-used {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+
+        .view-email-link {
+            color: #4CAF50;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .view-email-link:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 600px) {
+            .codes-wrapper {
+                flex-direction: column;
+            }
+            
+            .code-container {
+                flex: 1 1 auto;
+            }
+
+            .meta-info {
+                flex-direction: column;
+                gap: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="{{ url_for('home') }}" class="back-link">← Back to Generator</a>
+        <h1>Previously Generated Codes</h1>
+    </div>
+
+    <div id="history-content"></div>
+
+    <script>
+        async function loadHistory() {
+            try {
+                const response = await fetch('/api/promo/history');
+                const data = await response.json();
+                displayHistory(data);
+            } catch (error) {
+                console.error('Failed to load history:', error);
+            }
+        }
+
+        function displayHistory(results) {
+            const historyContent = document.getElementById('history-content');
+            if (results.length === 0) {
+                historyContent.innerHTML = '<p style="text-align: center">No previous results found</p>';
+                return;
+            }
+
+            const html = results.map(result => `
+                <div class="history-card">
+                    <div class="retailer">${result.retailer.toUpperCase()}</div>
+                    <div class="codes-wrapper">
+                        ${result.codes.online_code ? `
+                            <div class="code-container">
+                                <span class="code-label">🌐 Online:</span>
+                                <span class="code-text">${result.codes.online_code}</span>
+                                <button class="copy-button" onclick="copyToClipboard('${result.codes.online_code}', this)">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        ` : ''}
+                        ${result.codes.store_code ? `
+                            <div class="code-container">
+                                <span class="code-label">🏪 In-Store:</span>
+                                <span class="code-text">${result.codes.store_code}</span>
+                                <button class="copy-button" onclick="copyToClipboard('${result.codes.store_code}', this)">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        ` : ''}
+                    </div>
+                    ${(result.codes.discount_percentage || result.codes.valid_until) ? `
+                        <div class="meta-info">
+                            ${result.codes.discount_percentage ? `
+                                <span>💰 ${result.codes.discount_percentage}% off</span>
+                            ` : ''}
+                            ${result.codes.valid_until ? `
+                                <span>⏰ Valid until ${result.codes.valid_until}</span>
+                            ` : ''}
+                            <a href="/email/${result.id}" target="_blank" class="view-email-link">
+                                📧 View Email
+                            </a>
+                        </div>
+                    ` : ''}
+                    <div class="timestamp">Generated: ${new Date(result.created_at).toLocaleString()}</div>
+                    ${result.email ? `<div class="email-used">Email: ${result.email}</div>` : ''}
+                </div>
+            `).join('');
+            
+            historyContent.innerHTML = html;
+        }
+
+        async function copyToClipboard(text, button) {
+            try {
+                await navigator.clipboard.writeText(text);
+                
+                // Visual feedback
+                button.classList.add('copied');
+                button.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16.2L4.8 12l-1.4 1.4L9 19 21 7l-1.4-1.4L9 16.2z"/>
+                    </svg>
+                `;
+                
+                // Reset button after 2 seconds
+                setTimeout(() => {
+                    button.classList.remove('copied');
+                    button.innerHTML = `
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                        </svg>
+                    `;
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy text: ', err);
+            }
+        }
+
+        // Load history when page loads
+        document.addEventListener('DOMContentLoaded', loadHistory);
+    </script>
+</body>
+</html> 

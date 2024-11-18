@@ -10,8 +10,14 @@ from datetime import datetime
 import os
 import uuid
 from collections import defaultdict
+from flask_sqlalchemy import SQLAlchemy
+import gzip
+import base64
 
 app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///promo_codes.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
 # Comment out or conditionally set the HTTPS scheme based on environment
 if not app.debug:  # Only use HTTPS in production
@@ -29,6 +35,39 @@ logger = logging.getLogger(__name__)
 # Add these to your existing global variables
 task_queue = {}
 task_results = defaultdict(dict)
+
+# Add this model class after the app configuration
+class PromoResult(db.Model):
+    id = db.Column(db.String(36), primary_key=True)  # UUID
+    retailer = db.Column(db.String(50), nullable=False)
+    email = db.Column(db.String(100))
+    online_code = db.Column(db.String(20))
+    store_code = db.Column(db.String(20))
+    discount_percentage = db.Column(db.String(10))
+    valid_until = db.Column(db.String(20))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    email_subject = db.Column(db.String(200))  # Add email subject
+    email_html = db.Column(db.Text)  # Add email HTML content
+    all_codes = db.Column(db.String(500))  # Store all found codes as JSON string
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'retailer': self.retailer,
+            'email': self.email,
+            'codes': {
+                'online_code': self.online_code,
+                'store_code': self.store_code,
+                'discount_percentage': self.discount_percentage,
+                'valid_until': self.valid_until,
+                'all_codes': eval(self.all_codes) if self.all_codes else []
+            },
+            'email_data': {
+                'subject': self.email_subject,
+                'html': decompress_html(self.email_html)
+            },
+            'created_at': self.created_at.isoformat()
+        }
 
 class PromoCodeParser:
     def __init__(self, debug_mode=False):
@@ -247,6 +286,24 @@ def wait_for_email(temp_mail, email, timeout=120, check_interval=10):
         time.sleep(check_interval)
     return None
 
+def compress_html(html_content):
+    if not html_content:
+        return None
+    # Convert to bytes, compress with gzip, and encode as base64
+    compressed = gzip.compress(html_content.encode('utf-8'))
+    return base64.b64encode(compressed).decode('utf-8')
+
+def decompress_html(compressed_content):
+    if not compressed_content:
+        return None
+    # Decode base64 and decompress
+    try:
+        decoded = base64.b64decode(compressed_content.encode('utf-8'))
+        return gzip.decompress(decoded).decode('utf-8')
+    except Exception as e:
+        logger.error(f"Error decompressing HTML: {e}")
+        return None
+
 def process_promo_request(task_id, retailer):
     try:
         # Initialize services with debug mode in development
@@ -290,11 +347,38 @@ def process_promo_request(task_id, retailer):
             f"{retailer}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         )
         
-        # Store final results
+        # Update task status and results
         task_results[task_id].update({
             'status': 'completed',
-            'codes': promo_results
+            'codes': {
+                'online_code': promo_results.get('online_code'),
+                'store_code': promo_results.get('store_code'),
+                'discount_percentage': promo_results.get('discount_percentage'),
+                'valid_until': promo_results.get('valid_until'),
+                'all_codes': promo_results.get('all_codes', [])
+            },
+            'email_data': {
+                'subject': email_content['subject'],
+                'html': email_content['html']
+            }
         })
+        
+        # Store in database within application context
+        with app.app_context():
+            promo_result = PromoResult(
+                id=task_id,
+                retailer=retailer,
+                email=email,
+                online_code=promo_results.get('online_code'),
+                store_code=promo_results.get('store_code'),
+                discount_percentage=promo_results.get('discount_percentage'),
+                valid_until=promo_results.get('valid_until'),
+                email_subject=email_content['subject'],
+                email_html=compress_html(email_content['html']),  # Compress before storing
+                all_codes=str(promo_results.get('all_codes', []))
+            )
+            db.session.add(promo_result)
+            db.session.commit()
         
     except Exception as e:
         logger.error(f"Error processing request: {e}")
@@ -354,5 +438,25 @@ def get_promo_status(task_id):
     
     return jsonify(result)
 
+@app.route('/api/promo/history', methods=['GET'])
+def get_promo_history():
+    results = PromoResult.query.order_by(PromoResult.created_at.desc()).limit(10).all()
+    return jsonify([result.to_dict() for result in results])
+
+@app.route('/history')
+def history_page():
+    return render_template('history.html')
+
+@app.route('/email/<task_id>')
+def view_email(task_id):
+    result = PromoResult.query.get_or_404(task_id)
+    email_html = decompress_html(result.email_html)
+    return render_template('email_viewer.html', 
+                         email_html=email_html, 
+                         subject=result.email_subject,
+                         retailer=result.retailer)
+
 if __name__ == '__main__':
+    with app.app_context():
+        db.create_all()  # Create database tables
     app.run(debug=True)

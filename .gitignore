@@ -2,3 +2,4 @@ debug_emails
 __pycache__
 .venv
 .env
+instance/promo_codes.db
