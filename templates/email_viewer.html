@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ retailer }} Promo Email - Instant Discount Hunter</title>
     <style>
-        .header {
+        .viewer-header {
             position: fixed;
             top: 0;
             left: 0;
@@ -40,7 +40,7 @@
     </style>
 </head>
 <body>
-    <div class="header">
+    <div class="viewer-header">
         <a href="{{ url_for('history_page') }}" class="back-link">← Back to History</a>
         <h1 class="email-subject">{{ subject }}</h1>
     </div>

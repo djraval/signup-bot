@@ -13,6 +13,9 @@ from collections import defaultdict
 from flask_sqlalchemy import SQLAlchemy
 import gzip
 import base64
+import asyncio
+from capmonstercloudclient import CapMonsterClient, ClientOptions
+from capmonstercloudclient.requests import RecaptchaV2ProxylessRequest
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///promo_codes.db'
@@ -49,6 +52,7 @@ class PromoResult(db.Model):
     email_subject = db.Column(db.String(200))  # Add email subject
     email_html = db.Column(db.Text)  # Add email HTML content
     all_codes = db.Column(db.String(500))  # Store all found codes as JSON string
+    in_store_link = db.Column(db.String(500))  # Add this new column
     
     def to_dict(self):
         return {
@@ -58,6 +62,7 @@ class PromoResult(db.Model):
             'codes': {
                 'online_code': self.online_code,
                 'store_code': self.store_code,
+                'in_store_link': self.in_store_link,  # Add this to the output
                 'discount_percentage': self.discount_percentage,
                 'valid_until': self.valid_until,
                 'all_codes': eval(self.all_codes) if self.all_codes else []
@@ -79,12 +84,17 @@ class PromoCodeParser:
             self.debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'debug_emails')
             os.makedirs(self.debug_dir, exist_ok=True)
 
-    def extract_codes_from_html(self, html_content, email_type=None):
+    def _save_debug_email(self, html_content, email_type):
+        """Save email HTML content for debugging purposes."""
         if self.debug_mode and email_type:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             debug_file = os.path.join(self.debug_dir, f'{email_type}_{timestamp}.html')
             with open(debug_file, 'w', encoding='utf-8') as f:
                 f.write(html_content)
+
+    def extract_codes_from_html(self, html_content, email_type=None):
+        if self.debug_mode and email_type:
+            self._save_debug_email(html_content, email_type)
 
         soup = BeautifulSoup(html_content, 'html.parser')
         result = {
@@ -171,6 +181,109 @@ class PromoCodeParser:
                 codes.extend(matches)
                 current = current.find_next_sibling()
         return codes
+
+class RonaPromoParser(PromoCodeParser):
+    def __init__(self, debug_mode=False):
+        super().__init__(debug_mode)
+        self.valid_until_pattern = re.compile(r'valid until (\d{1,2}/\d{1,2}/\d{4})')
+        self.code_pattern = re.compile(r'BRN-[A-Z0-9]{6}')  # Matches BRN-XXXXXX pattern
+
+    def resolve_redirect_url(self, url: str) -> str:
+        """Follow redirect and return the final URL."""
+        try:
+            response = requests.head(url, allow_redirects=False)
+            if response.status_code == 302:
+                return response.headers.get('Location')
+            return url
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error resolving redirect URL: {e}")
+            return url
+
+    def extract_codes_from_html(self, html_content, email_type=None):
+        if self.debug_mode and email_type:
+            self._save_debug_email(html_content, email_type)
+
+        soup = BeautifulSoup(html_content, 'html.parser')
+        result = {
+            'online_code': None,
+            'store_code': None,
+            'valid_until': None,
+            'all_codes': [],
+            'in_store_link': None
+        }
+
+        # Extract promo code using Rona's specific format
+        text_content = soup.get_text()
+        code_match = self.code_pattern.search(text_content)
+        if code_match:
+            code = code_match.group()
+            result['online_code'] = code
+            result['all_codes'].append(code)
+
+        # Extract validity date
+        date_text = soup.find(string=self.valid_until_pattern)
+        if date_text:
+            match = self.valid_until_pattern.search(date_text)
+            if match:
+                result['valid_until'] = match.group(1)
+
+        # Extract and resolve in-store coupon link
+        coupon_link = soup.find('a', {'title': 'in-store coupon'})
+        if coupon_link:
+            initial_link = coupon_link.get('href')
+            result['in_store_link'] = self.resolve_redirect_url(initial_link)
+
+        return result
+
+async def subscribe_to_rona(email):
+    capmonster_api_key = os.getenv('CAPMONSTER_API_KEY')
+    if not capmonster_api_key:
+        logger.error("CAPMONSTER_API_KEY not found in environment variables")
+        return False
+
+    client_options = ClientOptions(api_key=capmonster_api_key)
+    cap_monster_client = CapMonsterClient(options=client_options)
+
+    try:
+        # Solve captcha
+        recaptcha_request = RecaptchaV2ProxylessRequest(
+            websiteUrl="https://www.rona.ca/en/newsletter-subscription",
+            websiteKey="6LdYpSUTAAAAABv51aNjgZRMbbYxLyxPKUM7TBpq",
+        )
+        solution = await cap_monster_client.solve_captcha(recaptcha_request)
+        captcha_response = solution.get('gRecaptchaResponse')
+
+        # Subscribe to newsletter
+        headers = {
+            'accept': '*/*',
+            'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'origin': 'https://www.rona.ca',
+            'referer': 'https://www.rona.ca/en/newsletter-subscription',
+            'x-requested-with': 'XMLHttpRequest'
+        }
+
+        data = {
+            'storeId': '10151',
+            'catalogId': '10051',
+            'langId': '-1',
+            'newsletterConso': 'Y',
+            'source': 'RONA_NEWSLETTER_RETAIL',
+            'userId': '-1002',
+            'email': email,
+            'zipCode': 'A1A 1A1',
+            'g-recaptcha-response': captcha_response,
+        }
+
+        response = requests.post(
+            "https://www.rona.ca/webapp/wcs/stores/servlet/RonaAjaxConsentSubscribeCmd",
+            headers=headers,
+            data=data
+        )
+
+        return response.status_code == 200
+    except Exception as e:
+        logger.error(f"Error subscribing to Rona: {e}")
+        return False
 
 class TempMail:
     def __init__(self):
@@ -272,7 +385,11 @@ def subscribe_to_gap(email):
         logger.error(f"Error subscribing to Gap: {e}")
         return False
 
-def wait_for_email(temp_mail, email, timeout=120, check_interval=10):
+def wait_for_email(temp_mail, email, retailer='default', timeout=120, check_interval=10):
+    # Adjust timeout based on retailer
+    if retailer == 'rona':
+        timeout = 600  # 5-6 minutes for Rona and limited to 10 mins
+    
     start_time = time.time()
     while time.time() - start_time < timeout:
         messages = temp_mail.get_messages(email)
@@ -306,26 +423,25 @@ def decompress_html(compressed_content):
 
 def process_promo_request(task_id, retailer):
     try:
-        # Initialize services with debug mode in development
         temp_mail = TempMail()
-        parser = PromoCodeParser(debug_mode=app.debug)  # Enable debug mode when in development
+        parser = PromoCodeParser(debug_mode=app.debug) if retailer != 'rona' else RonaPromoParser(debug_mode=app.debug)
         
-        # Generate email
         email = temp_mail.generate_email()
         logger.info(f"Generated email: {email}")
         
-        # Update task status
         task_results[task_id].update({
             'status': 'subscribing',
             'email': email
         })
         
-        # Subscribe to newsletter
+        # Subscribe to newsletter based on retailer
         if retailer == 'oldnavy':
             success = subscribe_to_oldnavy(email)
-        else:
+        elif retailer == 'gap':
             success = subscribe_to_gap(email)
-            
+        elif retailer == 'rona':
+            success = asyncio.run(subscribe_to_rona(email))
+        
         if not success:
             task_results[task_id]['status'] = 'failed'
             task_results[task_id]['error'] = f'Failed to subscribe to {retailer}'
@@ -334,8 +450,8 @@ def process_promo_request(task_id, retailer):
         # Update status
         task_results[task_id]['status'] = 'waiting_for_email'
         
-        # Wait for and process email
-        email_content = wait_for_email(temp_mail, email)
+        # Wait for and process email - pass the retailer
+        email_content = wait_for_email(temp_mail, email, retailer=retailer)
         if not email_content:
             task_results[task_id]['status'] = 'failed'
             task_results[task_id]['error'] = 'No email received within timeout period'
@@ -353,6 +469,7 @@ def process_promo_request(task_id, retailer):
             'codes': {
                 'online_code': promo_results.get('online_code'),
                 'store_code': promo_results.get('store_code'),
+                'in_store_link': promo_results.get('in_store_link'),
                 'discount_percentage': promo_results.get('discount_percentage'),
                 'valid_until': promo_results.get('valid_until'),
                 'all_codes': promo_results.get('all_codes', [])
@@ -371,6 +488,7 @@ def process_promo_request(task_id, retailer):
                 email=email,
                 online_code=promo_results.get('online_code'),
                 store_code=promo_results.get('store_code'),
+                in_store_link=promo_results.get('in_store_link'),
                 discount_percentage=promo_results.get('discount_percentage'),
                 valid_until=promo_results.get('valid_until'),
                 email_subject=email_content['subject'],
@@ -392,8 +510,8 @@ def create_promo_request():
     data = request.get_json()
     retailer = data.get('retailer', '').lower()
     
-    if retailer not in ['oldnavy', 'gap']:
-        return jsonify({'error': 'Invalid retailer. Must be either "oldnavy" or "gap"'}), 400
+    if retailer not in ['oldnavy', 'gap', 'rona']:
+        return jsonify({'error': 'Invalid retailer. Must be either "oldnavy", "gap", or "rona"'}), 400
     
     task_id = str(uuid.uuid4())
     task_results[task_id] = {

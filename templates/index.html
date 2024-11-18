@@ -396,6 +396,9 @@
                 text-align: center;
             }
         }
+        .meta-info a:hover {
+            text-decoration: underline !important;
+        }
     </style>
 </head>
 <body>
@@ -412,6 +415,10 @@
             <div class="retailer-card" data-retailer="gap" onclick="selectRetailer('gap', this)">
                 <img src="{{ url_for('static', filename='gap-logo.svg') }}" alt="Gap">
                 <span class="name">Gap</span>
+            </div>
+            <div class="retailer-card" data-retailer="rona" onclick="selectRetailer('rona', this)">
+                <img src="{{ url_for('static', filename='rona-logo.svg') }}" alt="Rona">
+                <span class="name">Rona</span>
             </div>
         </div>
         
@@ -488,7 +495,9 @@
                             statusMessage = `Subscribing with email: ${statusData.email}`;
                             break;
                         case 'waiting_for_email':
-                            statusMessage = 'Waiting for promotional email...';
+                            statusMessage = selectedRetailer === 'rona' 
+                                ? 'Waiting for promotional email... (this may take up to 5 minutes for Rona)'
+                                : 'Waiting for promotional email...';
                             break;
                         case 'completed':
                             displayResults(statusData);
@@ -515,11 +524,12 @@
             const codes = data.codes;
             
             let html = '<div class="results">';
-            html += `<h3>Results for ${data.retailer}</h3>`;
+            html += `<h3>Results for ${data.retailer.charAt(0).toUpperCase() + data.retailer.slice(1)}</h3>`;
             html += `<p>Email used: ${data.email}</p>`;
             
             html += '<div class="codes-wrapper">';
             
+            // Handle online code
             if (codes.online_code) {
                 html += `
                     <div class="code-container">
@@ -533,6 +543,7 @@
                     </div>`;
             }
             
+            // Handle store code
             if (codes.store_code) {
                 html += `
                     <div class="code-container">
@@ -547,15 +558,45 @@
             }
             html += '</div>';
             
-            if (codes.valid_until || codes.discount_percentage || data.id) {
-                html += '<div class="meta-info">';
-                if (codes.discount_percentage) {
-                    html += `<span>💰 ${codes.discount_percentage}% off</span>`;
-                }
-                if (codes.valid_until) {
-                    html += `<span>⏰ Valid until ${codes.valid_until}</span>`;
-                }
-                html += '</div>';
+            // Add meta information
+            let metaInfo = [];
+            if (codes.discount_percentage) {
+                metaInfo.push(`<span>💰 ${codes.discount_percentage}% off</span>`);
+            }
+            if (codes.valid_until) {
+                metaInfo.push(`<span>⏰ Valid until ${codes.valid_until}</span>`);
+            }
+            
+            // Add in-store link for Rona
+            if (data.retailer === 'rona' && codes.in_store_link) {
+                metaInfo.push(`<span><a href="${codes.in_store_link}" target="_blank" style="color: #4CAF50; text-decoration: none;">🔗 View In-Store Coupon</a></span>`);
+            }
+            
+            // Display all found codes in a collapsible section
+            if (codes.all_codes && codes.all_codes.length > 0) {
+                html += `
+                    <div class="all-codes">
+                        <details>
+                            <summary>View all found codes (${codes.all_codes.length})</summary>
+                            <div class="codes-list">
+                                ${codes.all_codes.map(code => `
+                                    <div class="code-item">
+                                        <span class="code-text">${code}</span>
+                                        <button class="copy-button" onclick="copyToClipboard('${code}', this)" title="Copy to clipboard">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1zm3 4H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </details>
+                    </div>`;
+            }
+            
+            // Add meta information if any exists
+            if (metaInfo.length > 0) {
+                html += `<div class="meta-info">${metaInfo.join('')}</div>`;
             }
             
             html += '</div>';

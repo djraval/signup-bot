@@ -126,6 +126,19 @@
             text-decoration: underline;
         }
 
+        .store-link {
+            color: #4CAF50;
+            text-decoration: none;
+            padding: 4px 8px;
+            border: 1px solid #4CAF50;
+            border-radius: 4px;
+        }
+
+        .store-link:hover {
+            background-color: #4CAF50;
+            color: white;
+        }
+
         @media (max-width: 600px) {
             .codes-wrapper {
                 flex-direction: column;
@@ -183,7 +196,12 @@
                                 </button>
                             </div>
                         ` : ''}
-                        ${result.codes.store_code ? `
+                        ${result.retailer === 'rona' && result.codes.in_store_link ? `
+                            <div class="code-container">
+                                <span class="code-label">🏪 In-Store:</span>
+                                <a href="${result.codes.in_store_link}" target="_blank" class="store-link">View Coupon</a>
+                            </div>
+                        ` : result.codes.store_code ? `
                             <div class="code-container">
                                 <span class="code-label">🏪 In-Store:</span>
                                 <span class="code-text">${result.codes.store_code}</span>
