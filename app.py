@@ -249,9 +249,9 @@ def wait_for_email(temp_mail, email, timeout=120, check_interval=10):
 
 def process_promo_request(task_id, retailer):
     try:
-        # Initialize services
+        # Initialize services with debug mode in development
         temp_mail = TempMail()
-        parser = PromoCodeParser()
+        parser = PromoCodeParser(debug_mode=app.debug)  # Enable debug mode when in development
         
         # Generate email
         email = temp_mail.generate_email()
@@ -284,8 +284,11 @@ def process_promo_request(task_id, retailer):
             task_results[task_id]['error'] = 'No email received within timeout period'
             return
             
-        # Parse promo codes
-        promo_results = parser.extract_codes_from_html(email_content['html'], retailer)
+        # Parse promo codes with email type for debug purposes
+        promo_results = parser.extract_codes_from_html(
+            email_content['html'], 
+            f"{retailer}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        )
         
         # Store final results
         task_results[task_id].update({
