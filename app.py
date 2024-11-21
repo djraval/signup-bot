@@ -208,8 +208,8 @@ class RonaPromoParser(PromoCodeParser):
             'online_code': None,
             'store_code': None,
             'valid_until': None,
-            'all_codes': [],
-            'in_store_link': None
+            'in_store_link': None,
+            'all_codes': []  # Initialize as empty list
         }
 
         # Extract promo code using Rona's specific format
@@ -235,23 +235,46 @@ class RonaPromoParser(PromoCodeParser):
 
         return result
 
-async def subscribe_to_rona(email):
+def solve_captcha_sync(website_url: str, website_key: str) -> str | None:
+    """
+    Synchronous wrapper around the async captcha solving functionality.
+    
+    Args:
+        website_url: The URL of the website where the captcha is located
+        website_key: The reCAPTCHA site key
+        
+    Returns:
+        str | None: The captcha solution or None if solving failed
+    """
     capmonster_api_key = os.getenv('CAPMONSTER_API_KEY')
     if not capmonster_api_key:
         logger.error("CAPMONSTER_API_KEY not found in environment variables")
-        return False
-
+        return None
+        
+    logger.info("Solving captcha")
     client_options = ClientOptions(api_key=capmonster_api_key)
     cap_monster_client = CapMonsterClient(options=client_options)
+    
+    recaptcha_request = RecaptchaV2ProxylessRequest(
+        websiteUrl=website_url,
+        websiteKey=website_key,
+    )
+    
+    # Use asyncio.run to make the async call blocking
+    solution = asyncio.run(cap_monster_client.solve_captcha(recaptcha_request))
+    logger.info(f"Captcha solution length: {len(solution.get('gRecaptchaResponse', '')) if solution else 0}")
+    return solution.get('gRecaptchaResponse') if solution else None
 
+def subscribe_to_rona(email):
     try:
-        # Solve captcha
-        recaptcha_request = RecaptchaV2ProxylessRequest(
-            websiteUrl="https://www.rona.ca/en/newsletter-subscription",
-            websiteKey="6LdYpSUTAAAAABv51aNjgZRMbbYxLyxPKUM7TBpq",
+        # Solve captcha synchronously
+        captcha_response = solve_captcha_sync(
+            website_url="https://www.rona.ca/en/newsletter-subscription",
+            website_key="6LdYpSUTAAAAABv51aNjgZRMbbYxLyxPKUM7TBpq"
         )
-        solution = await cap_monster_client.solve_captcha(recaptcha_request)
-        captcha_response = solution.get('gRecaptchaResponse')
+        if not captcha_response:
+            logger.error("Failed to solve captcha")
+            return False
 
         # Subscribe to newsletter
         headers = {
@@ -395,6 +418,7 @@ def wait_for_email(temp_mail, email, retailer='default', timeout=120, check_inte
         messages = temp_mail.get_messages(email)
         if messages:
             message = temp_mail.read_message(email, messages[0]['id'])
+            logger.info("Email received! From {}".format(message['from']))
             if message:
                 return {
                     'subject': message['subject'],
@@ -440,7 +464,7 @@ def process_promo_request(task_id, retailer):
         elif retailer == 'gap':
             success = subscribe_to_gap(email)
         elif retailer == 'rona':
-            success = asyncio.run(subscribe_to_rona(email))
+            success = subscribe_to_rona(email)
         
         if not success:
             task_results[task_id]['status'] = 'failed'
